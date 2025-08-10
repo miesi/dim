@@ -617,8 +617,8 @@ class TXT(RPCTest):
         """Test that DNAME cannot be created at zone apex"""
         self.r.zone_create('old.example.com')
         self.r.zone_create('new.example.com')
-        
-        with raises(InvalidParameterError, 'It is not allowed to create a DNAME for a zone'):
+       
+        with raises(InvalidParameterError, match='It is not allowed to create a DNAME for a zone'):
             self.r.rr_create(name='old.example.com.', type='DNAME', target='new.example.com.')
 
     def test_dname_conflicts_with_other_records(self):
@@ -629,7 +629,7 @@ class TXT(RPCTest):
         self.r.rr_create(name='conflict.test.com.', type='A', ip='1.2.3.4')
         
         # Try to create DNAME at same name - should fail
-        with raises(InvalidParameterError, 'cannot be created because other RRs with the same name exist'):
+        with raises(InvalidParameterError, match='cannot be created because other RRs with the same name exist'):
             self.r.rr_create(name='conflict.test.com.', type='DNAME', target='target.example.com.')
 
     def test_other_records_conflict_with_dname(self):
@@ -640,7 +640,7 @@ class TXT(RPCTest):
         self.r.rr_create(name='dept.test.com.', type='DNAME', target='dept.example.com.')
         
         # Try to create A record at same name - should fail
-        with raises(InvalidParameterError, 'cannot be created because a DNAME with the same name exists'):
+        with raises(InvalidParameterError, match='cannot be created because a DNAME with the same name exists'):
             self.r.rr_create(name='dept.test.com.', type='A', ip='1.2.3.4')
 
     def test_dname_subtree_conflict(self):
@@ -651,7 +651,7 @@ class TXT(RPCTest):
         self.r.rr_create(name='dept.test.com.', type='DNAME', target='dept.example.com.')
         
         # Try to create record under DNAME subtree - should fail
-        with raises(InvalidParameterError, 'cannot be created under DNAME subtree'):
+        with raises(InvalidParameterError, match='cannot be created under DNAME subtree'):
             self.r.rr_create(name='hr.dept.test.com.', type='A', ip='1.2.3.4')
 
     def test_dname_existing_subtree_conflict(self):
@@ -662,7 +662,7 @@ class TXT(RPCTest):
         self.r.rr_create(name='marketing.dept.test.com.', type='A', ip='1.2.3.4')
         
         # Try to create DNAME - should fail
-        with raises(InvalidParameterError, 'cannot be created because RRs exist under the DNAME subtree'):
+        with raises(InvalidParameterError, match='cannot be created because RRs exist under the DNAME subtree'):
             self.r.rr_create(name='dept.test.com.', type='DNAME', target='dept.example.com.')
 
     def test_dname_delete(self):
