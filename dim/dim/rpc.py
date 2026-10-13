@@ -436,8 +436,11 @@ class RPC(object):
         ipblock = Ipblock.query_ip(ip, layer3domain).first()
         pool = self._can_change_ip(ipblock or ip, layer3domain=layer3domain)
         if ipblock:
-            raise AlreadyExistsError("%s already exists in layer3domain %s with status %s" % (
-                ipblock, ipblock.layer3domain.name, ipblock.status.name))
+            # a Container may be created around a Subnet of the same size, if the
+            # Subnet has no same-size Container yet (checked by Ipblock._validate)
+            if not (status == 'Container' and ipblock.status.name == 'Subnet'):
+                raise AlreadyExistsError("%s already exists in layer3domain %s with status %s" % (
+                    ipblock, ipblock.layer3domain.name, ipblock.status.name))
         if disallow_children:
             if Ipblock.query\
                     .filter(inside(Ipblock.address, ip))\
@@ -511,11 +514,14 @@ class RPC(object):
         else:
             ip = ipblock.ip
             layer3domain = ipblock.layer3domain
-        check_block(ipblock, layer3domain, options, ip=ip)
+        ipblock = check_block(ipblock, layer3domain, options, ip=ip)
         if not ipblock and not ip.is_host:
             raise InvalidIPError("Ipblock %s does not exist in layer3domain %s" % (ip, layer3domain.name))
         attrs = {'ip': ip.label(expanded=full)}
         ancestors = Ipblock._ancestors_noparent(ip, layer3domain, include_self=True)
+        if ipblock is not None and ipblock.status.name == 'Container':
+            # a Subnet of the same size is below the Container, not above it
+            ancestors = [a for a in ancestors if a.prefix != ipblock.prefix or a == ipblock]
         if ipblock:
             attrs.update(ipblock.get_attrs())
             attrs['status'] = ipblock.status.name
@@ -1153,6 +1159,9 @@ class RPC(object):
         ip = parse_ip(cidr)
         created = 0
         block = Ipblock.query_ip(ip, pool.layer3domain).first()
+        if block and block.status.name == 'Container':
+            # the Subnet is created inside the Container of the same size
+            block = None
         if block:
             if block.status.name != 'Subnet':
                 raise InvalidStatusError("'%s' from layer3domain %s cannot be added to a pool because it is a %s" % (
@@ -1416,7 +1425,7 @@ class RPC(object):
         layer3domain = _get_layer3domain_arg(layer3domain, options)
         subnet = get_block(subnet, layer3domain)
         options['status'] = 'Subnet'
-        check_block(subnet, layer3domain, options)
+        subnet = check_block(subnet, layer3domain, options)
         if subnet.pool is None:
             raise NotInPoolError("%s from layer3domain %s is not part of any pool" % (subnet, subnet.layer3domain.name))
         try:
@@ -1444,7 +1453,7 @@ class RPC(object):
         layer3domain = _get_layer3domain_arg(layer3domain, options)
         subnet = get_block(subnet, layer3domain)
         options['status'] = 'Subnet'
-        check_block(subnet, layer3domain, options)
+        subnet = check_block(subnet, layer3domain, options)
         self._set_gateway(subnet, gateway)
 
     @updating
@@ -3644,6 +3653,11 @@ def check_block(block, layer3domain, options, ip=None):
     check_ip(ip, layer3domain, options, ensure_empty_options=False)
     if 'status' in options:
         expected = options.pop('status')
+        if block is not None and block.status.name != expected and not block.is_host:
+            # a Subnet may share its CIDR with its Container
+            sibling = Ipblock.query_ip(block.ip, block.layer3domain, status=expected).first()
+            if sibling is not None:
+                block = sibling
         if block is not None and block.status.name != expected:
             raise InvalidStatusError("%(block)s from layer3domain %(layer3domain)s is a %(status)s block (expected '%(expected)s')"
                                      % dict(block=ip, status=block.status.name, expected=expected,
@@ -4198,7 +4212,12 @@ def _find_ipblock(ipblock, layer3domain, status=None):
     if not valid_block(ipblock):
         Messages.warn('%s rounded to %s because it is not a valid CIDR block'
                       % (ipblock, ip))
-    block = Ipblock.query_ip(ip, layer3domain).first()
+    block = None
+    if status:
+        # a Subnet may share its CIDR with its Container: prefer the requested one
+        block = Ipblock.query_ip(ip, layer3domain).join(IpblockStatus)\
+            .filter(IpblockStatus.name.in_(status)).first()
+    block = block or Ipblock.query_ip(ip, layer3domain).first()
     if block:
         return block
     status_str = ' or '.join(status)

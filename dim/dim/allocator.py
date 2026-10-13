@@ -114,7 +114,7 @@ def free_ranges(parent_query):
                 # We need to split the range if we had no children, otherwise we
                 # could try to allocate a child with the same prefix, which is not
                 # possible
-                mid = ((range_end - range_start + 1) % 2 + range_start)
+                mid = range_start + (range_end - range_start + 1) // 2
                 ranges.append([range_start, mid - 1])
                 ranges.append([mid, range_end])
             else:

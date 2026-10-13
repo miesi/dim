@@ -109,7 +109,7 @@ You manage your IP-Space in DIM with the following objects: `containers`, `pools
 
 For an enterprise environment where you have several v4 /16 and v6 /32 aggregates to manage, you typically add these directly as containers.
 
-All IP objects are uniquely identified by prefix, length and layer3domain. It is not possible to have a /24 container and a /24 subnet of the same prefix. In this case please create two /25 subnets.
+All IP objects are uniquely identified by prefix, length and layer3domain. The one exception: a subnet may have exactly the size of its container, e.g. a /24 container that holds one /24 subnet. Create the container first and then add the subnet to a pool (or the other way round). Containers and subnets with a single address (/32, /128) are not possible.
 
 In a home user environment I recommend to just add rfc1918 v4 and 2000::/3 v6
 containers:

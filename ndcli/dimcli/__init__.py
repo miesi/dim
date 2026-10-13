@@ -1330,7 +1330,8 @@ class CLI(object):
                   help='(create and) add a subnet to POOLNAME')
     def modify_pool_add_subnet(self, args):
         '''
-        Add SUBNET to POOLNAME. If the subnet does not exist, it is created.
+        Add SUBNET to POOLNAME. If the subnet does not exist, it is created. If a
+        container of exactly the same size exists, the subnet is created inside it.
 
         If the subnet exists, and it is part of a different pool, --allow-move must be
         specified to move it to POOLNAME.

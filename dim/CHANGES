@@ -1,5 +1,7 @@
 to be released
 ------
+* allow a subnet of exactly the size of its container, e.g. a /24 container with one /24 subnet (schema 14 -> 15, see sql/migrate_14_to_15.sql) (ITOUDP-5900)
+* fix the allocator handing out a delegation of the size of its whole subnet (#205)
 * add ip version to the ipblock uniqueness key so 0.0.0.0/0 and ::/0 can coexist in one layer3domain (schema 13 -> 14, see sql/migrate_13_to_14.sql)
 * added ldap pseudo user sync to manage_dim (introduces is_pseudo column, LDAP_PSEUDO_USER_BASE, LDAP_BIND_DN, and LDAP_BIND_PASSWORD configurations)
 * added automated database schema mismatch verification check on application startup

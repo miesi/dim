@@ -5,11 +5,11 @@ import re
 from sqlalchemy import Column, BigInteger, Integer, String, Numeric, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import relationship, backref, validates, synonym
-from sqlalchemy.sql import bindparam, or_, between, func, expression, text
+from sqlalchemy.sql import bindparam, or_, between, func, expression, select, text
 from sqlalchemy.types import DateTime
 
 from dim import db
-from dim.errors import InvalidParameterError
+from dim.errors import AlreadyExistsError, InvalidParameterError
 from dim.ipaddr import IP
 from dim.iptrie import IPTrie
 from dim.models import WithAttr, TrackChanges, get_session_username
@@ -234,9 +234,11 @@ class AllocationHistory(db.Model):
 class Ipblock(db.Model, WithAttr, TrackChanges):
     # 'version' is part of a block's identity: 0.0.0.0/0 and ::/0 both have
     # address 0 and prefix 0, so without it they collide inside one layer3domain.
-    # It is appended so that the (address, prefix, layer3domain_id) index prefix
-    # stays intact -- ip.py hints this index by name in _set_parent().
-    __table_constraints__ = (UniqueConstraint('address', 'prefix', 'layer3domain_id', 'version'), )
+    # 'status_id' lets a Subnet have the size of its Container; every other
+    # same-size combination is rejected in _validate_same_size().
+    # Both are appended so that the (address, prefix, layer3domain_id) index
+    # prefix stays intact -- ip.py hints this index by name in _tree_update().
+    __table_constraints__ = (UniqueConstraint('address', 'prefix', 'layer3domain_id', 'version', 'status_id'), )
 
     id = Column(BigInteger, primary_key=True, nullable=False)
     version = Column(Integer, index=True, nullable=False)
@@ -360,6 +362,9 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
     @staticmethod
     def create(*args, **kwargs):
         ipblock = Ipblock(*args, **kwargs)
+        # before the INSERT, so the user gets a DIM error and not the uniqueness constraint
+        with db.session.no_autoflush:
+            ipblock._validate_same_size()
         db.session.add(ipblock)
         ipblock._tree_update()
         ipblock._validate()
@@ -395,7 +400,31 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
         return Ipblock.query.filter_by(address=ip.address,
                                        prefix=ip.prefix,
                                        version=ip.version,
-                                       **filters)
+                                       **filters)\
+            .order_by(Ipblock._is_container())
+
+    @staticmethod
+    def _is_container():
+        '''Order key that puts a Subnet before the Container of the same size.
+
+        A Subnet may have the size of its Container; it is the inner, more
+        specific of the two blocks, so lookups by CIDR return it first.'''
+        return Ipblock.status_id == select(IpblockStatus.id)\
+            .where(IpblockStatus.name == 'Container').scalar_subquery()
+
+    def _same_size(self, status_name=None):
+        '''Other blocks with the same CIDR in the same layer3domain.'''
+        # layer3domain_id is only filled in on flush
+        layer3domain_id = self.layer3domain.id if self.layer3domain is not None else self.layer3domain_id
+        q = Ipblock.query.filter(Ipblock.address == self.address,
+                                 Ipblock.prefix == self.prefix,
+                                 Ipblock.version == self.version,
+                                 Ipblock.layer3domain_id == layer3domain_id)
+        if self.id is not None:
+            q = q.filter(Ipblock.id != self.id)
+        if status_name is not None:
+            q = q.join(IpblockStatus).filter(IpblockStatus.name == status_name)
+        return q
 
     @staticmethod
     def build_tree_mem(layer3domain, version):
@@ -406,14 +435,18 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
                                   Ipblock.prefix,
                                   Ipblock.parent_id)\
             .filter(Ipblock.version == version, Ipblock.layer3domain_id == layer3domain.id)\
-            .order_by(Ipblock.prefix).all()
+            .order_by(Ipblock.prefix, Ipblock._is_container().desc()).all()
         tree = IPTrie(version)
         for id, address, prefix, parent in blocks:
             ip = IP(int(address), prefix, version)
             if prefix == tree._bits:
                 new_parent = tree.parent(ip)
             else:
+                same_size = tree.find(ip)
                 new_parent = tree.insert(ip, id)
+                if same_size is not None:
+                    # a Subnet of the size of its Container: the Container is its parent
+                    new_parent = same_size
             new_parent_id = new_parent.data if new_parent else None
             if new_parent_id != parent:
                 new_parents.append((id, new_parent_id))
@@ -437,7 +470,12 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
         db.session.flush()      # we need self.id
         logging.debug('Updating tree for %s', self)
         new_parent_id = None
-        if self.ip.prefix !=0:
+        if self.status.name == 'Subnet':
+            # a Subnet may have the size of its Container
+            container = self._same_size('Container').first()
+            if container is not None:
+                new_parent_id = container.id
+        if new_parent_id is None and self.ip.prefix != 0:
             ancestors = Ipblock._ancestors_noparent(self.ip, self.layer3domain)
             new_parent_id = ancestors[0].id if ancestors else None
         if self.parent_id != new_parent_id:
@@ -451,6 +489,27 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
                 .filter(Ipblock.address >= self.ip.network.address)\
                 .filter(Ipblock.address <= self.ip.broadcast.address)\
                 .update({'parent_id': self.id})
+            if self.status.name == 'Container':
+                # a Subnet of the same size that existed before this Container goes below it
+                for subnet in self._same_size('Subnet').filter(Ipblock.parent_id == self.parent_id):
+                    subnet.parent_id = self.id
+
+    def _validate_same_size(self):
+        '''Only a Subnet and its Container may share a CIDR.
+
+        _tree_update() makes the Container the Subnet's parent.'''
+        others = self._same_size().order_by(Ipblock._is_container()).all()
+        if not others:
+            return
+        if sorted([self.status.name] + [o.status.name for o in others]) == ['Container', 'Subnet']:
+            return
+        same_status = [o for o in others if o.status.name == self.status.name]
+        other = same_status[0] if same_status else others[0]
+        if self.status.name == 'Delegation' and other.status.name == 'Subnet':
+            raise AlreadyExistsError('A Delegation cannot have the size of its Subnet %s from layer3domain %s'
+                                     % (other.ip, other.layer3domain.name))
+        raise AlreadyExistsError('%s already exists in layer3domain %s with status %s'
+                                 % (other.ip, other.layer3domain.name, other.status.name))
 
     def _validate(self):
         status = self.status.name
@@ -520,7 +579,7 @@ class Ipblock(db.Model, WithAttr, TrackChanges):
         if layer3domain is not None:
             q = q.filter_by(layer3domain=layer3domain)
         return q.filter(Ipblock._ancestors_noparent_condition(ip, include_self=include_self)) \
-            .order_by(Ipblock.prefix.desc())
+            .order_by(Ipblock.prefix.desc(), Ipblock._is_container())
 
 
 class IpblockAttrName(db.Model):

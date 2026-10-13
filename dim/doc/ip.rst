@@ -21,6 +21,11 @@ values are:
 - Available: a single free IP address
 - Reserved: a reserved single IP address (for example the IPv4 network and broadcast addresses in a Subnet)
 
+Within one layer3domain an address and prefix length belong to one block only,
+with one exception: a Subnet may have exactly the size of its Container (for
+example a /24 Container holding one /24 Subnet). The Container is then the
+Subnet's parent. A Delegation can never have the size of its Subnet.
+
 Example IPv6 tree:
 
 .. digraph:: ipblock_tree_example

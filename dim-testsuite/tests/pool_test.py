@@ -147,9 +147,15 @@ class PoolTest(RPCTest):
             self.r.ippool_add_subnet('pool1', '12.0.0.0/24')
         with raises(InvalidIPError):
             self.r.ippool_add_subnet('pool1', '2001:db8::/32')
+        # a Subnet may have the size of its Container (ITOUDP-5900) ...
         self.r.ipblock_create('17.0.0.0/24', status='Container')
+        self.r.ippool_add_subnet('pool1', '17.0.0.0/24')
+        assert self.r.ipblock_get_attrs('17.0.0.0/24', status='Subnet')['pool'] == 'pool1'
+        assert self.r.ipblock_get_attrs('17.0.0.0/24', status='Container')['status'] == 'Container'
+        # ... but nothing else may
+        self.r.ipblock_create('18.0.0.0/24', status='Reserved')
         with raises(InvalidStatusError):
-            self.r.ippool_add_subnet('pool1', '17.0.0.0/24')
+            self.r.ippool_add_subnet('pool1', '18.0.0.0/24')
         self.r.ippool_create("pool2", vlan=4)
         self.check_ippool_add_subnet('pool2', '16.0.0.0/24')
         with raises(AlreadyExistsError):
