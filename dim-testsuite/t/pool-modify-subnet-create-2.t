@@ -1594,7 +1594,8 @@ INFO - Deleting zone 13.1.10.in-addr.arpa
 $ ndcli modify pool tp add subnet -h
 Usage: ndcli modify pool POOLNAME add subnet SUBNET [gw GW] [NAME:VALUE]...
 
- Add SUBNET to POOLNAME. If the subnet does not exist, it is created.
+ Add SUBNET to POOLNAME. If the subnet does not exist, it is created. If a
+container of exactly the same size exists, the subnet is created inside it.
 
 If the subnet exists, and it is part of a different pool, --allow-move must be
 specified to move it to POOLNAME.
