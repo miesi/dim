@@ -62,6 +62,15 @@ layer3domain: default
 192.168.10.0/24 (Container)
   192.168.10.0/24 (Subnet) pool:later
 
+# the reverse_dns_profile of the same-size Container applies to the Subnet
+$ ndcli create zone-profile rev primary ns.example.test. mail hostmaster@example.test
+$ ndcli create container 192.168.50.0/24 layer3domain default reverse_dns_profile:rev
+INFO - Creating container 192.168.50.0/24 in layer3domain default
+$ ndcli create pool withprofile layer3domain default
+$ ndcli modify pool withprofile add subnet 192.168.50.0/24
+INFO - Created subnet 192.168.50.0/24 in layer3domain default
+INFO - Creating zone 50.168.192.in-addr.arpa with profile rev
+
 # still forbidden: two Containers, two Subnets, a Delegation of the size of its
 # Subnet, single-address Containers and Subnets, a Subnet without a Container
 $ ndcli create container 192.168.178.0/24 layer3domain default

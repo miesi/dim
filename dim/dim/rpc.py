@@ -3120,7 +3120,13 @@ class RPC(object):
         return result
 
     def _create_reverse_zones(self, block):
-        profile = dim.dns.reverse_zone_profile(block.ip, block.layer3domain)
+        profile = None
+        # a Container of the same size as the Subnet comes first
+        container = Ipblock.query_ip(block.ip, block.layer3domain, status='Container').first()
+        if container is not None:
+            profile = container.get_attrs().get('reverse_dns_profile', None)
+        if profile is None:
+            profile = dim.dns.reverse_zone_profile(block.ip, block.layer3domain)
         for name in subnet_reverse_zones(block):
             zone = Zone.query.filter_by(name=name).first()
             if zone:
