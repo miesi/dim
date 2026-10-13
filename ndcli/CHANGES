@@ -1,5 +1,6 @@
 unreleased
 ----------
+* `import zone` imports wildcard A/AAAA records without their PTR and warns, instead of dropping them with "Invalid ptrdname" (ITOUDP-7962)
 * add support for ALIAS resource records (create, delete, modify, show)
 * add support for DNAME resource records (create, delete, modify, show, and zone import)
 * add tree view and filtering rendering mode to `list containers` command (`-T`/`--tree`, `-p`/`--pattern`, `-c`/`--case-sensitive`, `--no-color`)

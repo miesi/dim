@@ -181,6 +181,10 @@ def import_zone(server, content, zone_name=None, view=None, revzone=False):
             args.update(parsed_record.args)
             if args['type'] == 'PTR':
                 args['create_revzone'] = True
+            if args['type'] in ('A', 'AAAA') and args['name'].startswith('*.') and not revzone:
+                # a PTR can not point to a wildcard; "create rr" requires --only-forward for this
+                logging.warning('Not creating a PTR record for the wildcard record %s' % args['name'])
+                args['create_linked'] = False
             msg(server.rr_create(**args))
         except Exception as e:
             logging.debug('Error importing %s' % parsed_record.src, exc_info=True)
