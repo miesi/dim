@@ -318,10 +318,14 @@ RFC 4291, Section 2.6.1 (Subnet-Router anycast address):
   prefix when /127 prefixes are used." DIM still reserves the Subnet-Router
   anycast address of a /127, which is one of its two addresses.
 - Add /31 and /127 Subnets with ``--no-default-reserve``.
-- The ``gateway`` of a Subnet is an attribute, not a Reserved address.
-  Automatic allocation (``get ip``, ``create rr ... from POOL``) skips it;
-  DIM versions before this change handed it out like any other address.
-  ``mark ip`` can still take it explicitly.
+- The ``gateway`` of a Subnet is an attribute, not an address DIM keeps
+  free. ``get ip`` and ``create rr ... from POOL`` hand it out like any other
+  free address, because DIM does not know the gateway convention of a network
+  (first address, last address, .10, ...).
+- Network engineers register the DNS names of their interface and VRRP
+  addresses with ``create rr``. That makes these addresses Static, and
+  automatic allocation skips them - for single addresses (``get ip``) and for
+  Delegations (``get delegation``) alike.
 
 
 layer3domain and VRF
